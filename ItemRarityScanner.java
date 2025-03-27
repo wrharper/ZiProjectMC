@@ -11,9 +11,13 @@ import net.minecraftforge.registries.ForgeRegistries;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 public class ItemRarityScanner {
+
+    private static final Set<ResourceLocation> visitedItems = new HashSet<>(); // Track visited items to prevent loops
 
     public static void main(String[] args) {
         Map<String, Double> itemRarityMap = new HashMap<>();
@@ -26,7 +30,7 @@ public class ItemRarityScanner {
             double mineableRarity = calculateMineableRarity(item);
             double craftableRarity = calculateCraftableRarity(item, itemRarityMap);
 
-            // Merge mineable and craftable rarities, if applicable
+            // Merge mineable and craftable rarities, prioritizing the highest probability source
             double finalRarity = mergeRarities(mineableRarity, craftableRarity);
             itemRarityMap.put(itemName.toString(), finalRarity);
         }
@@ -45,7 +49,15 @@ public class ItemRarityScanner {
 
     private static double calculateCraftableRarity(Item item, Map<String, Double> itemRarityMap) {
         try {
-            Recipe<?> recipe = NeoforgeAPI.getCraftingRecipe(item.getRegistryName()); // Fetch crafting recipe
+            ResourceLocation itemName = item.getRegistryName();
+            if (itemName == null || visitedItems.contains(itemName)) {
+                // Prevent cycles by ignoring already-visited items
+                return 0.0;
+            }
+
+            visitedItems.add(itemName); // Mark the item as visited
+
+            Recipe<?> recipe = NeoforgeAPI.getCraftingRecipe(itemName); // Fetch crafting recipe
             if (recipe != null) {
                 double totalRarity = 0;
                 int ingredientCount = 0;
@@ -58,11 +70,14 @@ public class ItemRarityScanner {
                     // Fetch ingredient rarity or default to a neutral value
                     double ingredientRarity = itemRarityMap.getOrDefault(ingredientName.toString(), 0.5);
 
-                    // Calculate contribution of this ingredient to the overall rarity
+                    // Handle rare ingredients with high outputs (penalize rarity)
+                    ingredientRarity *= maxOutput; // Adjust rarity contribution
+
                     totalRarity += ingredientRarity;
                     ingredientCount++;
                 }
 
+                visitedItems.remove(itemName); // Unmark item after processing
                 // Prevent crafting loops by considering max output and ingredient recycling
                 double netRarity = totalRarity / ingredientCount; // Average rarity per ingredient
                 return netRarity / maxOutput; // Adjust based on max output count
@@ -75,17 +90,16 @@ public class ItemRarityScanner {
     }
 
     private static double mergeRarities(double mineableRarity, double craftableRarity) {
-        // If both rarities exist, use the higher probability (lower rarity) as the dominant source
+        // Use the lowest rarity (highest probability source)
         if (mineableRarity > 0 && craftableRarity > 0) {
-            return Math.min(mineableRarity, craftableRarity); // Lower rarity reflects higher probability
+            return Math.min(mineableRarity, craftableRarity);
         } else if (mineableRarity > 0) {
             return mineableRarity;
         } else if (craftableRarity > 0) {
             return craftableRarity;
         }
 
-        // Default fallback for items without any rarity source
-        return 0.5;
+        return 0.5; // Default fallback
     }
 
     private static double querySpawnRateFromWorldGeneration(ResourceLocation blockName) {
