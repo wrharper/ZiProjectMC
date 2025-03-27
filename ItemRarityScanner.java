@@ -124,15 +124,23 @@ public class ItemRarityScanner {
 
     private static double calculateAcquisitionTime(ResourceLocation ingredientName) {
         try {
-            // Example estimation for acquisition time based on typical gameplay mechanics
-            if (ingredientName.toString().contains("blaze_powder")) return 10; // 10 minutes for Blaze fights
-            if (ingredientName.toString().contains("snow")) return 5;         // 5 minutes for snow collection
-            if (ingredientName.toString().contains("ice")) return 8;          // 8 minutes for ice mining
+            // Check if the item requires smelting in a furnace or blast furnace
+            if (NeoforgeAPI.requiresSmelting(ingredientName)) {
+                double baseSmeltingTime = NeoforgeAPI.getSmeltingTime(ingredientName); // Fetch smelting time dynamically
+                double fuelCostModifier = NeoforgeAPI.getFuelCost(ingredientName); // Dynamically calculate fuel costs
+                return baseSmeltingTime * fuelCostModifier; // Adjust time based on fuel requirements
+            }
+    
+            // Check if the item requires processing through alternate non-fighting mechanics (e.g., brewing, grinding)
+            if (NeoforgeAPI.requiresProcessing(ingredientName)) {
+                double processingTime = NeoforgeAPI.getProcessingTime(ingredientName); // Fetch processing time
+                return processingTime;
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
-
-        return 2; // Default fallback for common items
+    
+        return 0; // Default fallback for items not requiring smelting or processing
     }
 
     private static double mergeRarities(double mineableRarity, double craftableRarity) {
