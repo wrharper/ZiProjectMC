@@ -75,16 +75,17 @@ public class ItemRarityScanner {
     }
 
     private static double mergeRarities(double mineableRarity, double craftableRarity) {
+        // If both rarities exist, use the higher probability (lower rarity) as the dominant source
         if (mineableRarity > 0 && craftableRarity > 0) {
-            // Combine the rarities (e.g., weighted average)
-            return (mineableRarity * 0.6) + (craftableRarity * 0.4);
+            return Math.min(mineableRarity, craftableRarity); // Lower rarity reflects higher probability
         } else if (mineableRarity > 0) {
             return mineableRarity;
         } else if (craftableRarity > 0) {
             return craftableRarity;
         }
 
-        return 0.5; // Default fallback
+        // Default fallback for items without any rarity source
+        return 0.5;
     }
 
     private static double querySpawnRateFromWorldGeneration(ResourceLocation blockName) {
