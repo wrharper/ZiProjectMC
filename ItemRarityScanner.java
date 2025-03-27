@@ -45,20 +45,27 @@ public class ItemRarityScanner {
 
     private static double calculateCraftableRarity(Item item, Map<String, Double> itemRarityMap) {
         try {
-            Recipe<?> recipe = NeoforgeAPI.getCraftingRecipe(item.getRegistryName());
+            Recipe<?> recipe = NeoforgeAPI.getCraftingRecipe(item.getRegistryName()); // Fetch crafting recipe
             if (recipe != null) {
                 double totalRarity = 0;
                 int ingredientCount = 0;
+                int maxOutput = recipe.getOutputCount(); // Max items produced by the recipe
 
                 for (Item ingredient : recipe.getIngredients()) {
                     ResourceLocation ingredientName = ingredient.getRegistryName();
                     if (ingredientName == null) continue;
 
-                    totalRarity += itemRarityMap.getOrDefault(ingredientName.toString(), 0.5);
+                    // Fetch ingredient rarity or default to a neutral value
+                    double ingredientRarity = itemRarityMap.getOrDefault(ingredientName.toString(), 0.5);
+
+                    // Calculate contribution of this ingredient to the overall rarity
+                    totalRarity += ingredientRarity;
                     ingredientCount++;
                 }
 
-                return ingredientCount > 0 ? totalRarity / ingredientCount : 0.0;
+                // Prevent crafting loops by considering max output and ingredient recycling
+                double netRarity = totalRarity / ingredientCount; // Average rarity per ingredient
+                return netRarity / maxOutput; // Adjust based on max output count
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -70,7 +77,7 @@ public class ItemRarityScanner {
     private static double mergeRarities(double mineableRarity, double craftableRarity) {
         if (mineableRarity > 0 && craftableRarity > 0) {
             // Combine the rarities (e.g., weighted average)
-            return (mineableRarity + craftableRarity) / 2;
+            return (mineableRarity * 0.6) + (craftableRarity * 0.4);
         } else if (mineableRarity > 0) {
             return mineableRarity;
         } else if (craftableRarity > 0) {
@@ -82,7 +89,7 @@ public class ItemRarityScanner {
 
     private static double querySpawnRateFromWorldGeneration(ResourceLocation blockName) {
         try {
-            return NeoforgeAPI.getBlockSpawnFrequency(blockName);
+            return NeoforgeAPI.getBlockSpawnFrequency(blockName); // Query block spawn frequency
         } catch (Exception e) {
             e.printStackTrace();
         }
