@@ -95,22 +95,44 @@ public class ItemRarityScanner {
     }
 
     private static double adjustForSituationalIngredients(double rarity, Item ingredient) {
-        // Adjust rarity for auxiliary resource costs (e.g., fuel for smelting)
-        if (ingredient.getRegistryName().toString().contains("coal") || ingredient.getRegistryName().toString().contains("blaze_powder")) {
-            rarity *= 1.5; // Penalize auxiliary resources
+        ResourceLocation ingredientName = ingredient.getRegistryName();
+        if (ingredientName == null) return rarity;
+
+        // Query spawn odds or biome distribution
+        double spawnOdds = querySpawnOdds(ingredientName);
+        if (spawnOdds > 0) {
+            rarity *= 1 / spawnOdds; // Adjust rarity based on availability odds
         }
 
-        // Adjust rarity for biome-specific or seasonal resources
-        if (ingredient.getRegistryName().toString().contains("snow") || ingredient.getRegistryName().toString().contains("ice")) {
-            rarity *= 2.0; // Penalize situational ingredients
-        }
-
-        // Add penalties for items often associated with automation
-        if (ingredient.getRegistryName().toString().contains("sugarcane") || ingredient.getRegistryName().toString().contains("bamboo")) {
-            rarity *= 1.3; // Automation penalty
-        }
+        // Estimate time required for acquisition
+        double acquisitionTime = calculateAcquisitionTime(ingredientName);
+        rarity *= 1 + (acquisitionTime / 60); // Adjust rarity based on time (scaled per minute)
 
         return rarity;
+    }
+
+    private static double querySpawnOdds(ResourceLocation ingredientName) {
+        try {
+            // Example query for biome or world generation prevalence
+            return NeoforgeAPI.getSpawnProbability(ingredientName); // Fetch odds dynamically
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return 0.1; // Default fallback for items with unknown odds
+    }
+
+    private static double calculateAcquisitionTime(ResourceLocation ingredientName) {
+        try {
+            // Example estimation for acquisition time based on typical gameplay mechanics
+            if (ingredientName.toString().contains("blaze_powder")) return 10; // 10 minutes for Blaze fights
+            if (ingredientName.toString().contains("snow")) return 5;         // 5 minutes for snow collection
+            if (ingredientName.toString().contains("ice")) return 8;          // 8 minutes for ice mining
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return 2; // Default fallback for common items
     }
 
     private static double mergeRarities(double mineableRarity, double craftableRarity) {
