@@ -4,6 +4,9 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.storage.loot.LootContext;
+import net.minecraft.world.level.storage.loot.LootTable;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.io.FileWriter;
@@ -16,7 +19,7 @@ public class ItemRarityScanner {
     public static void main(String[] args) {
         Map<String, Double> itemRarityMap = new HashMap<>();
 
-        // Step 1: Calculate natural rarity (blocks, loot, etc.)
+        // Step 1: Calculate rarity for natural items
         for (Item item : ForgeRegistries.ITEMS.getValues()) {
             ResourceLocation itemName = item.getRegistryName();
             if (itemName == null) continue;
@@ -25,7 +28,7 @@ public class ItemRarityScanner {
             itemRarityMap.put(itemName.toString(), rarity);
         }
 
-        // Step 2: Chain crafted item rarities dynamically
+        // Step 2: Dynamically calculate rarity for crafted items
         Map<String, Double> finalRarityMap = chainCraftedItemRarities(itemRarityMap);
 
         // Step 3: Export results to a JSON file
@@ -33,48 +36,49 @@ public class ItemRarityScanner {
     }
 
     private static double calculateNaturalRarity(Item item) {
-        // Check if item is a block and query spawn rates
         if (item instanceof BlockItem) {
             Block block = ((BlockItem) item).getBlock();
-            return getBlockSpawnFrequency(block);
+            return querySpawnRateFromWorldGeneration(block.getRegistryName());
         }
 
-        // Query loot tables for non-block items
         double lootTableProbability = getLootTableDropChance(item);
         if (lootTableProbability > 0) {
             return lootTableProbability;
         }
 
-        // Default rarity for items without explicit data
-        return 0.5; // Replace with smarter fallback if needed
+        return 0.5; // Default fallback for undefined items
     }
 
-    private static double getBlockSpawnFrequency(Block block) {
-        // Query dynamic spawn frequency from world generation data
-        // Replace the following placeholder with Neoforge API methods
-        ResourceLocation blockName = block.getRegistryName();
-        if (blockName == null) return 0.0;
+    private static double querySpawnRateFromWorldGeneration(ResourceLocation blockName) {
+        try {
+            // Query biome-specific or dimension-specific spawn data for blocks
+            return NeoforgeAPI.getBlockSpawnFrequency(blockName); // Example Neoforge method
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
-        // Example for common logic (pseudo-code)
-        // return querySpawnRateFromBiomeData(block);
-        return 0.0; // Placeholder for real-world generation query
+        return 0.0;
     }
 
     private static double getLootTableDropChance(Item item) {
-        // Query dynamic spawn chance from loot tables
-        // Replace the following placeholder with Neoforge API methods
-        ResourceLocation itemName = item.getRegistryName();
-        if (itemName == null) return 0.0;
+        try {
+            ResourceLocation itemName = item.getRegistryName();
+            if (itemName == null) return 0.0;
 
-        // Example for loot logic (pseudo-code)
-        // return queryProbabilityFromLootTables(item);
-        return 0.0; // Placeholder for actual loot table query
+            LootTable lootTable = NeoforgeAPI.getLootTable(itemName); // Example Neoforge method
+            if (lootTable != null) {
+                return lootTable.getDropProbability(itemName); // Example Neoforge method
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return 0.0;
     }
 
     private static Map<String, Double> chainCraftedItemRarities(Map<String, Double> itemRarityMap) {
         Map<String, Double> craftedRarityMap = new HashMap<>(itemRarityMap);
 
-        // Query crafting recipes and calculate combined rarity
         for (Item item : ForgeRegistries.ITEMS.getValues()) {
             ResourceLocation itemName = item.getRegistryName();
             if (itemName == null || !isCraftedItem(item)) continue;
@@ -87,15 +91,37 @@ public class ItemRarityScanner {
     }
 
     private static double calculateCraftedItemRarity(Item item, Map<String, Double> itemRarityMap) {
-        // Replace with logic for recipe analysis
-        // Use Neoforge APIs to retrieve recipes and calculate based on component rarity
-        return 0.5; // Placeholder, replace with calculated rarity
+        try {
+            Recipe<?> recipe = NeoforgeAPI.getCraftingRecipe(item.getRegistryName()); // Example Neoforge method
+            if (recipe != null) {
+                double totalRarity = 0;
+                int ingredientCount = 0;
+
+                for (Item ingredient : recipe.getIngredients()) { // Iterate through ingredients
+                    ResourceLocation ingredientName = ingredient.getRegistryName();
+                    if (ingredientName == null) continue;
+
+                    totalRarity += itemRarityMap.getOrDefault(ingredientName.toString(), 0.5);
+                    ingredientCount++;
+                }
+
+                return ingredientCount > 0 ? totalRarity / ingredientCount : 0.0;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return 0.5;
     }
 
     private static boolean isCraftedItem(Item item) {
-        // Check if the item has a crafting recipe
-        // Replace with Neoforge API query for crafting recipe existence
-        return true; // Placeholder for real recipe check
+        try {
+            return NeoforgeAPI.hasCraftingRecipe(item.getRegistryName()); // Example Neoforge method
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return false;
     }
 
     private static void writeToJson(Map<String, Double> itemRarityMap) {
