@@ -4,7 +4,6 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.storage.loot.LootContext;
 import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -19,85 +18,39 @@ public class ItemRarityScanner {
     public static void main(String[] args) {
         Map<String, Double> itemRarityMap = new HashMap<>();
 
-        // Step 1: Calculate rarity for natural items
+        // Step 1: Calculate rarity for all items (mineable and/or craftable)
         for (Item item : ForgeRegistries.ITEMS.getValues()) {
             ResourceLocation itemName = item.getRegistryName();
             if (itemName == null) continue;
 
-            double rarity = calculateNaturalRarity(item);
-            itemRarityMap.put(itemName.toString(), rarity);
+            double mineableRarity = calculateMineableRarity(item);
+            double craftableRarity = calculateCraftableRarity(item, itemRarityMap);
+
+            // Merge mineable and craftable rarities, if applicable
+            double finalRarity = mergeRarities(mineableRarity, craftableRarity);
+            itemRarityMap.put(itemName.toString(), finalRarity);
         }
 
-        // Step 2: Dynamically calculate rarity for crafted items
-        Map<String, Double> finalRarityMap = chainCraftedItemRarities(itemRarityMap);
-
-        // Step 3: Export results to a JSON file
-        writeToJson(finalRarityMap);
+        // Step 2: Export results to a JSON file
+        writeToJson(itemRarityMap);
     }
 
-    private static double calculateNaturalRarity(Item item) {
+    private static double calculateMineableRarity(Item item) {
         if (item instanceof BlockItem) {
             Block block = ((BlockItem) item).getBlock();
             return querySpawnRateFromWorldGeneration(block.getRegistryName());
         }
-
-        double lootTableProbability = getLootTableDropChance(item);
-        if (lootTableProbability > 0) {
-            return lootTableProbability;
-        }
-
-        return 0.5; // Default fallback for undefined items
+        return 0.0; // Default if not mineable
     }
 
-    private static double querySpawnRateFromWorldGeneration(ResourceLocation blockName) {
+    private static double calculateCraftableRarity(Item item, Map<String, Double> itemRarityMap) {
         try {
-            // Query biome-specific or dimension-specific spawn data for blocks
-            return NeoforgeAPI.getBlockSpawnFrequency(blockName); // Example Neoforge method
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return 0.0;
-    }
-
-    private static double getLootTableDropChance(Item item) {
-        try {
-            ResourceLocation itemName = item.getRegistryName();
-            if (itemName == null) return 0.0;
-
-            LootTable lootTable = NeoforgeAPI.getLootTable(itemName); // Example Neoforge method
-            if (lootTable != null) {
-                return lootTable.getDropProbability(itemName); // Example Neoforge method
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return 0.0;
-    }
-
-    private static Map<String, Double> chainCraftedItemRarities(Map<String, Double> itemRarityMap) {
-        Map<String, Double> craftedRarityMap = new HashMap<>(itemRarityMap);
-
-        for (Item item : ForgeRegistries.ITEMS.getValues()) {
-            ResourceLocation itemName = item.getRegistryName();
-            if (itemName == null || !isCraftedItem(item)) continue;
-
-            double craftedRarity = calculateCraftedItemRarity(item, itemRarityMap);
-            craftedRarityMap.put(itemName.toString(), craftedRarity);
-        }
-
-        return craftedRarityMap;
-    }
-
-    private static double calculateCraftedItemRarity(Item item, Map<String, Double> itemRarityMap) {
-        try {
-            Recipe<?> recipe = NeoforgeAPI.getCraftingRecipe(item.getRegistryName()); // Example Neoforge method
+            Recipe<?> recipe = NeoforgeAPI.getCraftingRecipe(item.getRegistryName());
             if (recipe != null) {
                 double totalRarity = 0;
                 int ingredientCount = 0;
 
-                for (Item ingredient : recipe.getIngredients()) { // Iterate through ingredients
+                for (Item ingredient : recipe.getIngredients()) {
                     ResourceLocation ingredientName = ingredient.getRegistryName();
                     if (ingredientName == null) continue;
 
@@ -111,17 +64,30 @@ public class ItemRarityScanner {
             e.printStackTrace();
         }
 
-        return 0.5;
+        return 0.0; // Default if not craftable
     }
 
-    private static boolean isCraftedItem(Item item) {
+    private static double mergeRarities(double mineableRarity, double craftableRarity) {
+        if (mineableRarity > 0 && craftableRarity > 0) {
+            // Combine the rarities (e.g., weighted average)
+            return (mineableRarity + craftableRarity) / 2;
+        } else if (mineableRarity > 0) {
+            return mineableRarity;
+        } else if (craftableRarity > 0) {
+            return craftableRarity;
+        }
+
+        return 0.5; // Default fallback
+    }
+
+    private static double querySpawnRateFromWorldGeneration(ResourceLocation blockName) {
         try {
-            return NeoforgeAPI.hasCraftingRecipe(item.getRegistryName()); // Example Neoforge method
+            return NeoforgeAPI.getBlockSpawnFrequency(blockName);
         } catch (Exception e) {
             e.printStackTrace();
         }
 
-        return false;
+        return 0.0; // Default for non-spawning blocks
     }
 
     private static void writeToJson(Map<String, Double> itemRarityMap) {
