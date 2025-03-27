@@ -18,6 +18,8 @@ import java.util.Set;
 public class ItemRarityScanner {
 
     private static final Set<ResourceLocation> visitedItems = new HashSet<>(); // Track visited items to prevent loops
+    private static final Map<ResourceLocation, Double> memoizedRarities = new HashMap<>(); // Memoization cache for performance
+    private static final double DEFAULT_RARITY = 0.5; // Default fallback rarity
 
     public static void main(String[] args) {
         Map<String, Double> itemRarityMap = new HashMap<>();
@@ -27,12 +29,16 @@ public class ItemRarityScanner {
             ResourceLocation itemName = item.getRegistryName();
             if (itemName == null) continue;
 
-            double mineableRarity = calculateMineableRarity(item);
-            double craftableRarity = calculateCraftableRarity(item, itemRarityMap);
+            // Prevent duplicate calculations with memoization
+            if (!memoizedRarities.containsKey(itemName)) {
+                double mineableRarity = calculateMineableRarity(item);
+                double craftableRarity = calculateCraftableRarity(item, itemRarityMap);
 
-            // Merge mineable and craftable rarities, prioritizing the highest probability source
-            double finalRarity = mergeRarities(mineableRarity, craftableRarity);
-            itemRarityMap.put(itemName.toString(), finalRarity);
+                // Merge mineable and craftable rarities, prioritizing the highest probability source
+                double finalRarity = mergeRarities(mineableRarity, craftableRarity);
+                memoizedRarities.put(itemName, finalRarity);
+                itemRarityMap.put(itemName.toString(), finalRarity);
+            }
         }
 
         // Step 2: Export results to a JSON file
@@ -68,17 +74,16 @@ public class ItemRarityScanner {
                     if (ingredientName == null) continue;
 
                     // Fetch ingredient rarity or default to a neutral value
-                    double ingredientRarity = itemRarityMap.getOrDefault(ingredientName.toString(), 0.5);
+                    double ingredientRarity = itemRarityMap.getOrDefault(ingredientName.toString(), DEFAULT_RARITY);
 
-                    // Handle rare ingredients with high outputs (penalize rarity)
-                    ingredientRarity *= maxOutput; // Adjust rarity contribution
+                    // Adjust for proportion and situational factors
+                    ingredientRarity = adjustForSituationalIngredients(ingredientRarity, ingredient);
 
                     totalRarity += ingredientRarity;
                     ingredientCount++;
                 }
 
                 visitedItems.remove(itemName); // Unmark item after processing
-                // Prevent crafting loops by considering max output and ingredient recycling
                 double netRarity = totalRarity / ingredientCount; // Average rarity per ingredient
                 return netRarity / maxOutput; // Adjust based on max output count
             }
@@ -87,6 +92,25 @@ public class ItemRarityScanner {
         }
 
         return 0.0; // Default if not craftable
+    }
+
+    private static double adjustForSituationalIngredients(double rarity, Item ingredient) {
+        // Adjust rarity for auxiliary resource costs (e.g., fuel for smelting)
+        if (ingredient.getRegistryName().toString().contains("coal") || ingredient.getRegistryName().toString().contains("blaze_powder")) {
+            rarity *= 1.5; // Penalize auxiliary resources
+        }
+
+        // Adjust rarity for biome-specific or seasonal resources
+        if (ingredient.getRegistryName().toString().contains("snow") || ingredient.getRegistryName().toString().contains("ice")) {
+            rarity *= 2.0; // Penalize situational ingredients
+        }
+
+        // Add penalties for items often associated with automation
+        if (ingredient.getRegistryName().toString().contains("sugarcane") || ingredient.getRegistryName().toString().contains("bamboo")) {
+            rarity *= 1.3; // Automation penalty
+        }
+
+        return rarity;
     }
 
     private static double mergeRarities(double mineableRarity, double craftableRarity) {
@@ -99,7 +123,7 @@ public class ItemRarityScanner {
             return craftableRarity;
         }
 
-        return 0.5; // Default fallback
+        return DEFAULT_RARITY; // Default fallback
     }
 
     private static double querySpawnRateFromWorldGeneration(ResourceLocation blockName) {
